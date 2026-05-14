@@ -1,0 +1,9 @@
+.env
+.env.*
+.hf-cache/
+*.pyc
+*.pyo
+*.pyd
+*.so
+**/__pycache__/
+ddrg_v1/.venv/
