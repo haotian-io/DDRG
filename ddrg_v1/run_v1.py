@@ -12,6 +12,7 @@ if __package__ is None or __package__ == "":
 from tqdm import tqdm
 
 from ddrg_v1 import utils as ddrg
+from ddrg_v1.anchor_scorer import load_anchor_scorer
 from ddrg_v1.core import run_ddrg_v1
 from ddrg_v1.llm import make_llm_client
 
@@ -48,6 +49,9 @@ def load_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
 def run(args: argparse.Namespace) -> None:
     random.seed(args.seed)
     args.model = resolve_model(args)
+    args.anchor_scorer = (
+        load_anchor_scorer(args.anchor_scorer_path) if getattr(args, "anchor_scorer_path", None) else None
+    )
     client = make_llm_client(
         provider=args.llm_provider,
         base_url=args.base_url,
@@ -181,6 +185,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--azure-deployment", default=None)
     parser.add_argument("--referer", default="https://localhost")
     parser.add_argument("--title", default="ddrg-v1")
+    parser.add_argument(
+        "--anchor-scorer-path",
+        default=None,
+        help="Optional path to a trained learned anchor scorer JSON file.",
+    )
 
     parser.add_argument("--k", type=int, default=3)
     parser.add_argument("--temperature", type=float, default=0.9)

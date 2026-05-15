@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import utils as ddrg
+from .anchor_scorer import LogisticAnchorScorer, heuristic_anchor_score as learned_heuristic_anchor_score
 from .llm import LLMClient, prompt_with_problem
 from .prompts import ALIGNMENT_PROMPT, ELRG_PROMPT, FRONTIER_PROBE_PROMPT, PROBE_PROMPT
 
@@ -631,56 +632,58 @@ def answer_probe_delta(answer: str, probe_results: List[Dict[str, Any]]) -> int:
 
 
 def graph_anchor_score(graph: Dict[str, Any], probe_results: List[Dict[str, Any]]) -> Tuple[float, Dict[str, Any]]:
-    summary = graph.get("repair_summary", {})
-    verified_nodes = count_nodes_with_status(graph, "verified")
-    verified_edges = count_edges_with_status(graph, "verified")
-    refuted_nodes = count_nodes_with_status(graph, "refuted")
-    refuted_edges = count_edges_with_status(graph, "refuted")
-    invalid_nodes = len(summary.get("invalid_node_ids", []))
-    valid_ans_bonus = 2.0 if summary.get("answer_node_valid", False) else -3.0
-    probe_answer_delta = answer_probe_delta(graph.get("predicted_answer", ""), probe_results)
-    score = (
-        float(graph.get("graph_score", 0.0))
-        + 0.60 * verified_nodes
-        + 0.35 * verified_edges
-        - 1.25 * refuted_nodes
-        - 0.85 * refuted_edges
-        - 0.50 * invalid_nodes
-        + valid_ans_bonus
-        + 1.00 * probe_answer_delta
-    )
-    return score, {
-        "base_graph_score": graph.get("graph_score", 0.0),
-        "verified_nodes": verified_nodes,
-        "verified_edges": verified_edges,
-        "refuted_nodes": refuted_nodes,
-        "refuted_edges": refuted_edges,
-        "invalid_nodes": invalid_nodes,
-        "valid_ans_bonus": valid_ans_bonus,
-        "probe_answer_delta": probe_answer_delta,
-        "score": score,
-    }
+    return learned_heuristic_anchor_score(graph, probe_results)
 
 
 def select_verified_anchor(
     repaired_support_graphs: List[Dict[str, Any]],
     fallback_pred: str,
     probe_results: List[Dict[str, Any]],
+    alignment: Optional[Dict[str, Any]] = None,
+    anchor_scorer: Optional[LogisticAnchorScorer] = None,
 ) -> Tuple[str, Optional[Dict[str, Any]], Dict[str, Any]]:
-    valid_graphs = []
-    for graph in repaired_support_graphs:
-        score, components = graph_anchor_score(graph, probe_results)
-        graph["anchor_score"] = score
-        graph["anchor_score_components"] = components
-        answer = ddrg.normalize_answer(graph.get("predicted_answer", ""))
-        if answer and graph.get("repair_summary", {}).get("answer_node_valid", False):
-            valid_graphs.append(graph)
-
     supported_answers = {
         ddrg.normalize_answer(result.get("supported", ""))
         for result in probe_results
         if ddrg.normalize_answer(result.get("supported", ""))
     }
+    valid_graphs = []
+    anchor_diagnostics = []
+    for graph in repaired_support_graphs:
+        if anchor_scorer is not None:
+            score, components = anchor_scorer.score_graph(
+                graph=graph,
+                all_graphs=repaired_support_graphs,
+                probe_results=probe_results,
+                alignment=alignment,
+            )
+        else:
+            score, components = graph_anchor_score(graph, probe_results)
+        graph["anchor_score"] = score
+        graph["anchor_score_components"] = components
+        answer = ddrg.normalize_answer(graph.get("predicted_answer", ""))
+        answer_valid = bool(graph.get("repair_summary", {}).get("answer_node_valid", False))
+        if answer and answer_valid:
+            valid_graphs.append(graph)
+        anchor_diagnostics.append(
+            {
+                "graph": graph.get("graph"),
+                "predicted_answer": answer,
+                "answer_node_valid": answer_valid,
+                "probe_supported_answer": bool(answer and answer in supported_answers),
+                "anchor_score": score,
+                "anchor_score_components": components,
+            }
+        )
+
+    anchor_diagnostics.sort(
+        key=lambda item: (
+            bool(item.get("answer_node_valid", False)),
+            bool(item.get("probe_supported_answer", False)),
+            float(item.get("anchor_score", 0.0)),
+        ),
+        reverse=True,
+    )
     preferred = [
         graph
         for graph in valid_graphs
@@ -691,13 +694,16 @@ def select_verified_anchor(
         return fallback_pred, None, {
             "answer_source": "graph_sc_fallback",
             "fallback_reason": "no_valid_repaired_anchor",
+            "score_mode": "learned_anchor_logreg" if anchor_scorer is not None else "heuristic_verified_anchor",
             "supported_answers": sorted(supported_answers),
+            "anchor_diagnostics": anchor_diagnostics,
         }
 
     selected_graph = max(pool, key=lambda graph: float(graph.get("anchor_score", 0.0)))
     selected_answer = ddrg.normalize_answer(selected_graph.get("predicted_answer", "")) or fallback_pred
     return selected_answer, selected_graph, {
-        "answer_source": "verified_anchor",
+        "answer_source": "learned_anchor" if anchor_scorer is not None else "verified_anchor",
+        "score_mode": "learned_anchor_logreg" if anchor_scorer is not None else "heuristic_verified_anchor",
         "selected_graph": selected_graph.get("graph"),
         "selected_graph_answer": selected_answer,
         "selected_graph_score": selected_graph.get("anchor_score"),
@@ -705,14 +711,19 @@ def select_verified_anchor(
         "selected_graph_repair_summary": selected_graph.get("repair_summary", {}),
         "used_probe_supported_answer_filter": bool(preferred),
         "supported_answers": sorted(supported_answers),
+        "anchor_diagnostics": anchor_diagnostics,
+        "anchor_scorer_model": anchor_scorer.metadata if anchor_scorer is not None else None,
     }
 
 
-def build_integrated_repaired_graph(anchor_graph: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+def build_integrated_repaired_graph(
+    anchor_graph: Optional[Dict[str, Any]],
+    source: str = "programmatic_verified_anchor",
+) -> Optional[Dict[str, Any]]:
     if not anchor_graph:
         return None
     return {
-        "source": "programmatic_verified_anchor",
+        "source": source,
         "final_answer": anchor_graph.get("predicted_answer", ""),
         "anchor_graph": anchor_graph.get("graph"),
         "anchor_score": anchor_graph.get("anchor_score"),
@@ -737,6 +748,12 @@ def build_integrated_repaired_graph(anchor_graph: Optional[Dict[str, Any]]) -> O
             for edge in anchor_graph.get("repaired_edges", [])
         ],
     }
+
+
+def integrated_graph_source(answer_source: str) -> str:
+    if answer_source == "learned_anchor":
+        return "programmatic_learned_anchor"
+    return "programmatic_verified_anchor"
 
 
 def format_integrated_repaired_graph(graph: Optional[Dict[str, Any]]) -> str:
@@ -869,13 +886,20 @@ def run_ddrg_v1(
         repaired_support_graphs=repaired_support_graphs,
         fallback_pred=fallback_pred,
         probe_results=probe_results,
+        alignment=alignment,
+        anchor_scorer=getattr(args, "anchor_scorer", None),
     )
-    integrated_graph = build_integrated_repaired_graph(selected_graph)
+    integrated_graph = build_integrated_repaired_graph(
+        selected_graph,
+        source=integrated_graph_source(str(anchor_selection.get("answer_source", "verified_anchor"))),
+    )
     integrated_graph_text = format_integrated_repaired_graph(integrated_graph)
     trace.append(
         {
             "stage": "verified_anchor_selection",
             "selected": selected,
+            "score_mode": anchor_selection.get("score_mode", "heuristic_verified_anchor"),
+            "num_scored_graphs": len(anchor_selection.get("anchor_diagnostics", [])),
             "selection": anchor_selection,
         }
     )
@@ -893,6 +917,7 @@ def run_ddrg_v1(
         "repaired_support_graphs": repaired_support_graphs,
         "selected_graph_output": selected_graph,
         "anchor_selection": anchor_selection,
+        "anchor_diagnostics": anchor_selection.get("anchor_diagnostics", []),
         "integrated_repaired_graph": integrated_graph,
         "integrated_repaired_graph_text": integrated_graph_text,
         "trace": trace,

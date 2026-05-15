@@ -110,3 +110,49 @@ Core knobs:
 - `--max-graph-chars`: maximum prompt characters per support graph.
 - `--print-graph`: print the repaired `F'` graph.
 - `--print-raw-graphs`: print raw sampled graphs.
+
+## Learned Anchor Scorer
+
+You can train a lightweight learned anchor scorer from prior JSONL runs that
+contain gold answers:
+
+```bash
+./ddrg_v1/.venv/bin/python ./ddrg_v1/train_anchor_scorer.py \
+  ./ddrg_v1/results/pilot_20260514/logiqa.jsonl \
+  ./ddrg_v1/results/pilot_20260514/lsat_ar.jsonl \
+  --model-out ./ddrg_v1/results/anchor_scorer_logreg.json \
+  --csv-out ./ddrg_v1/results/anchor_scorer_features.csv
+```
+
+To report held-out anchor-selection accuracy on separate result files:
+
+```bash
+./ddrg_v1/.venv/bin/python ./ddrg_v1/train_anchor_scorer.py \
+  ./ddrg_v1/results/pilot_20260514/logiqa.jsonl \
+  --eval-inputs ./ddrg_v1/results/pilot_20260514/lsat_ar.jsonl \
+  --model-out ./ddrg_v1/results/anchor_scorer_logreg.json
+```
+
+To inspect the per-graph features without training:
+
+```bash
+./ddrg_v1/.venv/bin/python ./ddrg_v1/extract_features.py \
+  ./ddrg_v1/results/pilot_20260514/logiqa.jsonl \
+  --csv-out ./ddrg_v1/results/logiqa_anchor_features.csv
+```
+
+To use a trained scorer at inference time, pass it to `run_v1.py`:
+
+```bash
+./ddrg_v1/.venv/bin/python ./ddrg_v1/run_v1.py \
+  --benchmark logiqa \
+  --limit 10 \
+  --llm-provider azure \
+  --model gpt-5.4 \
+  --anchor-scorer-path ./ddrg_v1/results/anchor_scorer_logreg.json
+```
+
+When `--anchor-scorer-path` is set, the result JSONL includes learned-anchor
+diagnostics under `ddrg_v1.anchor_selection`, `ddrg_v1.anchor_diagnostics`, and
+the final `trace` stage. Without that flag, the default heuristic anchor path
+is preserved.
