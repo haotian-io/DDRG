@@ -199,6 +199,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-graph-nodes", type=int, default=20)
     parser.add_argument("--max-support-nodes", type=int, default=20)
     parser.add_argument("--max-graph-chars", type=int, default=2200)
+    parser.add_argument(
+        "--alignment-mode",
+        choices=["llm", "hybrid"],
+        default="llm",
+        help="Alignment mode for cross-graph claim alignment. Hybrid is experimental.",
+    )
 
     parser.add_argument("--max-probes", type=int, default=2)
     parser.add_argument("--probe-votes", type=int, default=1)

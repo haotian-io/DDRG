@@ -131,11 +131,11 @@ Extract graph-level features from prior runs:
 Summarize result files for comparison:
 
 ```bash
-./ddrg_v1/.venv/bin/python ./ddrg_v1/summarize_results.py \
-  ./ddrg_v1/results/pilot_20260514/logiqa.jsonl \
-  ./ddrg_v1/results/logiqa_learned_anchor.jsonl \
-  --csv-out ./ddrg_v1/results/comparison_summary.csv \
-  --md-out ./ddrg_v1/results/comparison_summary.md
+./ddrg_v1/.venv/bin/python ./ddrg_v1/compare_methods.py \
+  --inputs \
+    heuristic=./ddrg_v1/results/pilot_heuristic/ \
+    learned=./ddrg_v1/results/pilot_learned/ \
+  --output-dir ./ddrg_v1/results/comparison_example
 ```
 
 These experiments are sufficient for the next phase: establish whether the learned selector is worth keeping, quantify where the pipeline is still unstable, and identify whether the next research priority should be alignment, verification, repair, or final selection.

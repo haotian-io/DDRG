@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from . import utils as ddrg
+from .alignment import hybrid_align_support_graphs
 from .anchor_scorer import LogisticAnchorScorer, heuristic_anchor_score as learned_heuristic_anchor_score
 from .llm import LLMClient, prompt_with_problem
 from .prompts import ALIGNMENT_PROMPT, ELRG_PROMPT, FRONTIER_PROBE_PROMPT, PROBE_PROMPT
@@ -276,7 +277,15 @@ def align_support_graphs(
         top_p=args.top_p,
         max_tokens=args.builder_max_tokens,
     )
-    return parse_alignment_output(output, support_graphs)
+    parsed = parse_alignment_output(output, support_graphs)
+    parsed["mode"] = "llm"
+    parsed["diagnostics"] = {
+        "mode": "llm",
+        "input_graph_count": len(support_graphs),
+        "returned_cluster_count": len(parsed.get("alignments", [])),
+        "parse_ok": parsed.get("parse_ok", False),
+    }
+    return parsed
 
 
 def build_meta_graph(
@@ -797,6 +806,9 @@ def run_ddrg_v1(
     outputs: Optional[List[str]] = None,
 ) -> Tuple[str, List[str], List[ddrg.Candidate], Dict[str, Any]]:
     trace: List[Dict[str, Any]] = []
+    alignment_mode = str(getattr(args, "alignment_mode", "llm") or "llm").strip().lower()
+    if alignment_mode not in {"llm", "hybrid"}:
+        alignment_mode = "llm"
     if candidates is None:
         outputs, candidates = sample_graphs(client, args, question)
     else:
@@ -823,18 +835,33 @@ def run_ddrg_v1(
     )
 
     alignment: Dict[str, Any] = {"parse_ok": False, "alignments": []}
+    alignment_diagnostics: Dict[str, Any] = {"mode": alignment_mode, "returned_cluster_count": 0}
     meta_graph: Dict[str, Any] = {}
     conflict_builder: Dict[str, Any] = {"parse_ok": False, "conflicts": []}
     probe_results: List[Dict[str, Any]] = []
 
     if len(support_graphs) > 1:
-        alignment = align_support_graphs(client, args, question, support_graphs)
+        if alignment_mode == "hybrid":
+            alignment = hybrid_align_support_graphs(
+                client=client,
+                args=args,
+                question=question,
+                support_graphs=support_graphs,
+                llm_align_fn=lambda: align_support_graphs(client, args, question, support_graphs),
+            )
+        else:
+            alignment = align_support_graphs(client, args, question, support_graphs)
+        alignment_diagnostics = dict(alignment.get("diagnostics", {}))
+        alignment_diagnostics.setdefault("mode", alignment_mode)
+        alignment_diagnostics.setdefault("returned_cluster_count", len(alignment.get("alignments", [])))
         meta_graph = build_meta_graph(support_graphs, alignment)
         trace.append(
             {
                 "stage": "graph_first_alignment",
+                "mode": alignment_mode,
                 "parse_ok": alignment.get("parse_ok", False),
                 "num_alignments": len(alignment.get("alignments", [])),
+                "diagnostics": alignment_diagnostics,
             }
         )
         if alignment.get("parse_ok") and alignment.get("alignments"):
@@ -909,6 +936,8 @@ def run_ddrg_v1(
         "selection_mode": anchor_selection.get("answer_source", "verified_anchor"),
         "proposal_answers": proposal_answers,
         "fallback_graph_sc": fallback_pred,
+        "alignment_mode": alignment_mode,
+        "alignment_diagnostics": alignment_diagnostics,
         "support_graphs": support_graphs,
         "alignment": alignment,
         "meta_graph": meta_graph,

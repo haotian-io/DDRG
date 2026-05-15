@@ -7,6 +7,7 @@ This repository now contains:
 - `ddrg_v1/`: the cleaned DDRG v1 pipeline, Azure/OpenAI-compatible LLM adapter, benchmark downloader, runner, and result summarizer.
 - `benchmarks/`: local benchmark files prepared for `aiw`, `aiw+`, `logiqa`, `lsat_ar`, `mathqa`, and `medqa`.
 - `ddrg_v1/results/`: smoke-test outputs and a cross-benchmark pilot run.
+- `docs/research_plan.md`: concise positioning and next-step notes for the current DDRG direction.
 
 ## Layout
 
@@ -79,3 +80,9 @@ See `ddrg_v1/README.md` for the method-specific usage notes.
 
 For the current project framing, completed learned-anchor milestone, and next
 research/development steps, see [docs/research_plan.md](./docs/research_plan.md).
+
+## Experiment Utilities
+
+For small controlled pilot runs across benchmarks, use `ddrg_v1/run_experiments.py`.
+For offline comparison of heuristic versus learned-anchor outputs, use
+`ddrg_v1/compare_methods.py`.

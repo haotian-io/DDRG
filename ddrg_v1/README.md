@@ -108,6 +108,7 @@ Core knobs:
 - `--probe-votes`: verifier calls per probe.
 - `--max-support-nodes`: maximum ANS-support nodes per graph.
 - `--max-graph-chars`: maximum prompt characters per support graph.
+- `--alignment-mode`: `llm` by default; `hybrid` enables an experimental conservative alignment scaffold.
 - `--print-graph`: print the repaired `F'` graph.
 - `--print-raw-graphs`: print raw sampled graphs.
 
@@ -156,3 +157,59 @@ When `--anchor-scorer-path` is set, the result JSONL includes learned-anchor
 diagnostics under `ddrg_v1.anchor_selection`, `ddrg_v1.anchor_diagnostics`, and
 the final `trace` stage. Without that flag, the default heuristic anchor path
 is preserved.
+
+## Experiment Runner
+
+To run a small multi-benchmark pilot and collect one result file per benchmark:
+
+```bash
+./ddrg_v1/.venv/bin/python ./ddrg_v1/run_experiments.py \
+  --benchmarks logiqa lsat_ar mathqa aiw \
+  --limit 10 \
+  --k 2 \
+  --max-probes 1 \
+  --llm-provider azure \
+  --model gpt-5.4 \
+  --output-dir ./ddrg_v1/results/pilot_runner_example \
+  --max-workers 1
+```
+
+Use `--dry-run` to print the `run_v1.py` and summarization commands without
+executing them. Use `--skip-existing` or `--resume` to avoid re-running
+benchmarks whose JSONL files already exist.
+
+## Method Comparison
+
+To compare heuristic and learned-anchor outputs offline:
+
+```bash
+./ddrg_v1/.venv/bin/python ./ddrg_v1/compare_methods.py \
+  --inputs \
+    heuristic=./ddrg_v1/results/pilot_heuristic/ \
+    learned=./ddrg_v1/results/pilot_learned/ \
+  --output-dir ./ddrg_v1/results/comparison_example
+```
+
+This writes `comparison_summary.csv`, `comparison_summary.md`, and
+`paired_examples.csv`.
+
+## Hybrid Alignment
+
+Hybrid alignment is experimental and disabled by default. The default pipeline
+still uses the existing LLM alignment path.
+
+To enable the conservative hybrid scaffold:
+
+```bash
+./ddrg_v1/.venv/bin/python ./ddrg_v1/run_v1.py \
+  --benchmark logiqa \
+  --limit 10 \
+  --llm-provider azure \
+  --model gpt-5.4 \
+  --alignment-mode hybrid
+```
+
+In hybrid mode, DDRG first builds deterministic alignment candidates from
+normalized claim text and graph-local signals, then falls back to the existing
+LLM alignment path only when needed. Result JSONL files include
+`ddrg_v1.alignment_mode` and `ddrg_v1.alignment_diagnostics`.
