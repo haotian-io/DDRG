@@ -74,3 +74,8 @@ Useful files:
 For `medqa`, use `medqa_retry.jsonl` as the valid pilot output. The earlier `medqa.jsonl` file is a partial run captured before per-example error handling was added.
 
 See `ddrg_v1/README.md` for the method-specific usage notes.
+
+## Research Plan
+
+For the current project framing, completed learned-anchor milestone, and next
+research/development steps, see [docs/research_plan.md](./docs/research_plan.md).
