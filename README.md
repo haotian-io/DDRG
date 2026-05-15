@@ -81,6 +81,9 @@ See `ddrg_v1/README.md` for the method-specific usage notes.
 For the current project framing, completed learned-anchor milestone, and next
 research/development steps, see [docs/research_plan.md](./docs/research_plan.md).
 
+Current project-wide status and artifact inventory are summarized in
+[docs/project_summary_20260515.md](./docs/project_summary_20260515.md).
+
 ## Experiment Utilities
 
 For small controlled pilot runs across benchmarks, use `ddrg_v1/run_experiments.py`.

@@ -7,3 +7,12 @@
 *.so
 **/__pycache__/
 ddrg_v1/.venv/
+
+# Local generated pilot artifacts and offline scorer outputs.
+ddrg_v1/results/anchor_scorer_pilot_*.json
+ddrg_v1/results/anchor_scorer_pilot_*_features.csv
+ddrg_v1/results/pilot_llm_heuristic_limit*/
+ddrg_v1/results/pilot_hybrid_heuristic_limit*/
+ddrg_v1/results/pilot_llm_learned_limit*/
+ddrg_v1/results/comparison_alignment_limit*/
+ddrg_v1/results/comparison_learned_anchor_limit*/
